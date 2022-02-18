@@ -1,0 +1,22 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS SAM CLI Nested Stack for Auto Dependency Layer Creation
+Metadata:
+  SamCliInfo: 1.38.0
+  key: AWS SAM CLI sync command
+Outputs:
+  EmailFunction666f5016DepLayer:
+    Value:
+      Ref: EmailFunction666f5016DepLayer
+Resources:
+  EmailFunction666f5016DepLayer:
+    Metadata:
+      CreatedBy: AWS SAM CLI sync command
+    Properties:
+      CompatibleRuntimes:
+      - python3.8
+      ContentUri: /Users/pt164814/projects/noties/.aws-sam/auto-dependency-layer/EmailFunction666f5016DepLayer
+      Description: Auto created layer for dependencies of function EmailFunction
+      LayerName: noties-dev27da73b1-EmailFunction666f5016-DepLayer
+      RetentionPolicy: Delete
+    Type: AWS::Serverless::LayerVersion
+Transform: AWS::Serverless-2016-10-31

@@ -1,0 +1,98 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: 'noties
+
+  Sample SAM Template for noties
+
+  '
+Parameters:
+  DomainName:
+    Type: String
+    Description: The domain name we are using in the environment
+    Default: nickswiss.com
+  HostedZoneId:
+    Type: String
+    Description: The hosted zone containing the domain name
+    Default: Z04977892Q5DCCM906BDK
+Globals:
+  Function:
+    Timeout: 3
+Resources:
+  EmailFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: EmailFunction
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Environment:
+        Variables:
+          GMAIL_OAUTH_SECRET: noties/gmail_oauth
+      Policies:
+      - AWSSecretsManagerGetSecretValuePolicy:
+          SecretArn:
+            Fn::Sub: arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:noties/*
+      Events:
+        EmailCheckSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(10 minutes)
+            Name:
+              Fn::Sub: ${EmailFunction}-MailCheckSchedule
+            Description: Runs every 10 minutes
+            Enabled: true
+      Layers:
+      - Ref: ProjectSharedLibs
+      - Fn::GetAtt:
+        - AwsSamAutoDependencyLayerNestedStack
+        - Outputs.EmailFunction666f5016DepLayer
+    Metadata:
+      SamResourceId: EmailFunction
+  EmailFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName:
+        Fn::Sub: /aws/lambda/${EmailFunction}
+      RetentionInDays: 7
+  OAuthCName:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId:
+        Ref: LiveHostedZoneId
+      RecordSets:
+      - Name:
+          Fn::Sub: oauth.noties.nickswiss.com
+        Type: A
+        AliasTarget:
+          DNSName:
+            Fn::GetAtt:
+            - LiveSitebuilderCFDistribution
+            - DomainName
+          HostedZoneId: Z2FDTNDATAQYW2
+  OAuthCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName:
+        Ref: DomainName
+      ValidationMethod: DNS
+      DomainValidationOptions:
+      - DomainName:
+          Ref: DomainName
+        HostedZoneId:
+          Ref: HostedZoneId
+  ProjectSharedLibs:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: ProjectSharedLibs
+      CompatibleRuntimes:
+      - python3.8
+      RetentionPolicy: Delete
+    Metadata:
+      BuildMethod: python3.8
+      SamResourceId: ProjectSharedLibs
+  AwsSamAutoDependencyLayerNestedStack:
+    DeletionPolicy: Delete
+    Metadata:
+      CreatedBy: AWS SAM CLI sync command
+    Properties:
+      TemplateURL: /Users/pt164814/projects/noties/.aws-sam/auto-dependency-layer/nested_template.yaml
+    Type: AWS::CloudFormation::Stack
