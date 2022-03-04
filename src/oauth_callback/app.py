@@ -1,24 +1,25 @@
 import json
 import logging
 import os
-import requests
 
 import boto3
 import google_auth_oauthlib.flow
+import requests
+from googleapiclient.discovery import build
 
+from aws_utils.creds import credentials_to_dict
 from aws_utils.lambda_functions.http.decorators import rest_api
 from aws_utils.lambda_functions.http.response import HTTPResponse
 from aws_utils.secrets_manager import get_secret
+from email_utils import OAUTH_SCOPES
+from email_utils.models import EmailHistory
 
 GMAIL_OAUTH_SECRET = os.getenv('GMAIL_OAUTH_SECRET')
-SCOPES = [
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/userinfo.email'
-]
 DOMAIN_NAME = os.getenv('DOMAIN_NAME')
 AUTH_DB = os.getenv('AUTH_DB')
-OAUTH_SUCCESS = os.path.join(os.path.dirname(__file__), "oauth_success.html")
+EMAIL_DB = os.getenv('EMAIL_DB')
 
+OAUTH_SUCCESS = os.path.join(os.path.dirname(__file__), "oauth_success.html")
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -42,7 +43,7 @@ def lambda_handler(request):
     state = request.query_string_params['state']
     flow = google_auth_oauthlib.flow.Flow.from_client_config(
         gmail_oauth_config,
-        scopes=request.query_string_params['scope'].split(' '),
+        scopes=OAUTH_SCOPES,
         state=state
     )
 
@@ -58,6 +59,18 @@ def lambda_handler(request):
     credentials = flow.credentials
     email = get_user_email(credentials.token)['email']
     boto3.resource('dynamodb').Table(AUTH_DB).put_item(Item=credentials_to_dict(email, credentials))
+
+    gmail = build('gmail', 'v1', credentials=credentials)
+    resp = gmail.users().watch(
+        userId='me',
+        body={'labelIds': ['INBOX'], 'topicName': 'projects/noties/topics/email'}
+    ).execute()
+
+    boto3.resource('dynamodb').Table(EMAIL_DB).put_item(
+        Item=EmailHistory(
+            email=email,
+            watch_expiration=int(int(resp['expiration']) / 1000)
+        ).dict())
     return HTTPResponse(
         data=oauth_success(),
         headers={'Content-Type': 'text/html'},
@@ -66,19 +79,6 @@ def lambda_handler(request):
 
 def get_user_email(access_token):
     r = requests.get(
-            'https://www.googleapis.com/oauth2/v3/userinfo',
-            params={'access_token': access_token})
+        'https://www.googleapis.com/oauth2/v3/userinfo',
+        params={'access_token': access_token})
     return r.json()
-
-def credentials_to_dict(email, credentials):
-    return {
-        'email': email,
-        'credentials': {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes
-        }
-    }

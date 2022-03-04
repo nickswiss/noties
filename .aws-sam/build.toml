@@ -8,7 +8,7 @@ architecture = "x86_64"
 handler = "app.lambda_handler"
 manifest_hash = "d41d8cd98f00b204e9800998ecf8427e"
 packagetype = "Zip"
-functions = ["EmailFunction"]
+functions = ["EmailHistoryEventsConsumer"]
 
 [function_build_definitions.95fc2882-2b3f-4707-8ac1-1bc3387618f9]
 codeuri = "/Users/pt164814/projects/noties/src/oauth_form"
@@ -36,6 +36,15 @@ handler = "app.lambda_handler"
 manifest_hash = ""
 packagetype = "Zip"
 functions = ["OAuthCallback"]
+
+[function_build_definitions.7b6abf38-2efa-4d51-ae9d-31c61e1233ca]
+codeuri = "/Users/pt164814/projects/noties/src/email_history_events_publisher"
+runtime = "python3.8"
+architecture = "x86_64"
+handler = "app.lambda_handler"
+manifest_hash = ""
+packagetype = "Zip"
+functions = ["EmailHistoryEventsPublisherFunction"]
 
 [layer_build_definitions]
 [layer_build_definitions.a10c4bd4-80d5-486d-a2ee-32057cd0e227]

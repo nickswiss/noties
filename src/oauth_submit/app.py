@@ -8,12 +8,11 @@ from aws_utils.lambda_functions.http.decorators import rest_api
 from aws_utils.lambda_functions.http.response import HTTPResponse
 from aws_utils.secrets_manager import get_secret
 
+from email_utils import OAUTH_SCOPES
+
 GMAIL_OAUTH_SECRET = os.getenv('GMAIL_OAUTH_SECRET')
-SCOPES = [
-    'https://www.googleapis.com/auth/gmail.readonly',
-    'https://www.googleapis.com/auth/userinfo.email',
-    'openid'
-]
+
+
 DOMAIN_NAME = os.getenv('DOMAIN_NAME')
 
 logger = logging.getLogger()
@@ -28,7 +27,7 @@ def lambda_handler(request):
     # authorization. The client ID (from that file) and access scopes are required.
     flow = google_auth_oauthlib.flow.Flow.from_client_config(
         gmail_oauth_config,
-        scopes=SCOPES
+        scopes=OAUTH_SCOPES
     )
 
     # Indicate where the API server will redirect the user after the user completes

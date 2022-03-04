@@ -21,41 +21,100 @@ Resources:
     Properties:
       Name: !Sub 'noties.${DomainName}'
 
-  EmailFunction:
+  EventsApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: v1
+      Cors:
+        AllowMethods: "'POST, GET'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+      Auth:
+        ApiKeyRequired: true
+        UsagePlan:
+          CreateUsagePlan: SHARED
+          UsagePlanName: !Sub '${AWS::StackName}-events-api-usage-plan'
+      Domain:
+        CertificateArn: !Ref NotiesSubdomainCertificate
+        Route53:
+          HostedZoneName: !Sub 'noties.${DomainName}.' # workaround https://github.com/aws/serverless-application-model/issues/1539 (notice period at end)
+        DomainName: !Sub 'events.noties.${DomainName}'
+        EndpointConfiguration: EDGE
+        SecurityPolicy: TLS_1_2
+
+  EmailHistoryEvents:
+    Type: AWS::SQS::Queue
+
+  # Define the publisher Lambda function with permissions
+  EmailHistoryEventsPublisherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/email_history_events_publisher/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 3
+      MemorySize: 128
+      Environment:
+        Variables:
+          SQS_ARN: !Ref EmailHistoryEvents
+      Policies:
+        ## Read more about SAM Policy templates at:
+        ## https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt EmailHistoryEvents.QueueName
+      Events:
+        EmailHistoryPublisher:
+          Type: Api
+          Properties:
+            Path: /email-history
+            Method: post
+            RestApiId: !Ref EventsApi
+      Layers:
+        - !Ref ProjectSharedLibs
+
+  EmailHistoryEventsPublisherFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${EmailHistoryEventsPublisherFunction}"
+      RetentionInDays: 7
+
+  EmailHistoryEventsConsumer:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/email_worker/
       Handler: app.lambda_handler
       Runtime: python3.8
+      Timeout: 30
       Environment:
         Variables:
           AUTH_DB: !Ref AuthDb
+          EMAIL_DB: !Ref EmailDb
           GMAIL_OAUTH_SECRET: 'noties/gmail_oauth'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref AuthDb
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EmailDb
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:noties/*"
       Events:
-        EmailCheckSchedule:
-          Type: Schedule
+        EmailHistoryEvent:
+          Type: SQS
           Properties:
-            Schedule: 'rate(10 minutes)'
-            Name: !Sub "${EmailFunction}-MailCheckSchedule"
-            Description: Runs every 10 minutes
-            Enabled: true
+            Queue: !GetAtt EmailHistoryEvents.Arn
+            BatchSize: 1
       Layers:
         - !Ref ProjectSharedLibs
 
-  EmailFunctionLogGroup:
+  EmailHistoryEventsConsumerLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/aws/lambda/${EmailFunction}"
+      LogGroupName: !Sub "/aws/lambda/${EmailHistoryEventsConsumer}"
       RetentionInDays: 7
 
   ###### OAuth Apis #######
 
-  OAuthCertificate:
+  NotiesSubdomainCertificate:
     Type: AWS::CertificateManager::Certificate
     Properties:
       DomainName: !Sub 'noties.${DomainName}'
@@ -79,9 +138,9 @@ Resources:
           CreateUsagePlan: SHARED
           UsagePlanName: !Sub '${AWS::StackName}-api-usage-plan'
       Domain:
-        CertificateArn: !Ref OAuthCertificate
+        CertificateArn: !Ref NotiesSubdomainCertificate
         Route53:
-          HostedZoneId: !Ref SubdomainHostedZone
+          HostedZoneId: !Ref SubdomainHostedZone  # workaround https://github.com/aws/serverless-application-model/issues/1539 must be different compared with events api r53
         DomainName: !Sub 'oauth.noties.${DomainName}'
         EndpointConfiguration: EDGE
         SecurityPolicy: TLS_1_2
@@ -101,7 +160,7 @@ Resources:
       Layers:
         - !Ref ProjectSharedLibs
       Events:
-        AddSiteApi:
+        OAuthForm:
           Type: Api
           Properties:
             Path: /form
@@ -137,15 +196,19 @@ Resources:
       CodeUri: src/oauth_callback/
       Handler: app.lambda_handler
       Runtime: python3.8
+      Timeout: 10
       Environment:
         Variables:
           OAUTHLIB_RELAX_TOKEN_SCOPE: 1
           DOMAIN_NAME: !Sub 'oauth.noties.${DomainName}'
           GMAIL_OAUTH_SECRET: 'noties/gmail_oauth'
           AUTH_DB: !Ref AuthDb
+          EMAIL_DB: !Ref EmailDb
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref AuthDb
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EmailDb
         - AWSSecretsManagerGetSecretValuePolicy:
             SecretArn: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:noties/*"
       Layers:
@@ -162,6 +225,17 @@ Resources:
     Type: AWS::Serverless::SimpleTable
     Properties:
       TableName: !Sub '${AWS::StackName}-authdb'
+      PrimaryKey:
+        Name: email
+        Type: String
+      ProvisionedThroughput:
+        ReadCapacityUnits: 1
+        WriteCapacityUnits: 1
+
+  EmailDb:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: !Sub '${AWS::StackName}-emaildb'
       PrimaryKey:
         Name: email
         Type: String
@@ -186,3 +260,4 @@ Resources:
 #  HelloEfsApi:
 #    Description: "API Gateway endpoint URL for Prod stage for Hello EFS function"
 #    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
+
