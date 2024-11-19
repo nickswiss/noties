@@ -1,6 +1,7 @@
 # noties
 
 Purely Serverless AWS SAM App showing OAuth with Google
+Playing with generating twilio based text messages based on email landing in inbox for super high priority emails.
 
 ## Deploy the sample application
 
